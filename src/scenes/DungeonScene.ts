@@ -8,10 +8,10 @@ const TILE=32,OX=32,OY=112;
 const COLORS={void:0x090d12,floor:0x263238,floor2:0x303e43,wall:0x11181d,edge:0x56645f,robot:0xe4c86b,eye:0x80e9ff,crawler:0xb56b6b,sentinel:0x9a72b5,scrap:0xd18b47,cell:0x63c99b,module:0x6eb6d8,exit:0xe2d27d};
 
 export class DungeonScene extends Phaser.Scene{
-  private dungeon!:Dungeon; private floor=1; private hp=12; private maxHp=12; private scrap=0; private modules=0;
+  private dungeon!:Dungeon; private floor=1; private hp=12; private maxHp=12; private atk=1; private scrap=0; private modules=0; private level=1; private xp=0; private xpNext=6; private bankedModules=0;
   private player:Point={x:0,y:0}; private enemies:Enemy[]=[]; private loot:Loot[]=[]; private nextId=1;
   private gfx!:Phaser.GameObjects.Graphics; private hud!:Phaser.GameObjects.Text; private log!:Phaser.GameObjects.Text;
-  private ended=false; private busy=false; private explored=new Set<string>(); private visionRadius=4;
+  private ended=false; private busy=false; private explored=new Set<string>(); private visionRadius=4; private beaconTurns=0;
 
   constructor(){super('dungeon')}
   create(){
@@ -24,7 +24,7 @@ export class DungeonScene extends Phaser.Scene{
   }
 
   private newFloor(reset=false){
-    if(reset){this.floor=1;this.hp=this.maxHp;this.scrap=0;this.modules=0;this.ended=false}
+    if(reset){this.floor=1;this.level=1;this.xp=0;this.xpNext=6;this.atk=1;this.maxHp=12;this.hp=this.maxHp;this.scrap=0;this.modules=0;this.beaconTurns=0;this.ended=false}
     this.dungeon=generateDungeon();this.player={...this.dungeon.start};this.enemies=[];this.loot=[];this.explored=new Set<string>();
     for(const room of this.dungeon.rooms.slice(1)){
       if(Math.random()<.8)this.enemies.push({id:this.nextId++,pos:{x:room.cx,y:room.cy},hp:this.floor>2?4:3,maxHp:this.floor>2?4:3,kind:Math.random()<.72?'crawler':'sentinel'});
@@ -42,6 +42,7 @@ export class DungeonScene extends Phaser.Scene{
   private onKey=(e:KeyboardEvent)=>{
     if(this.busy)return;
     if(this.ended){if(e.key.toLowerCase()==='r')this.newFloor(true);return}
+    if(e.key.toLowerCase()==='e'){this.beaconTurns=4;this.message('RETURN BEACON 啟動：撐過 4 回合即可安全撤離。');this.draw();return}
     const k=e.key.toLowerCase(); let d:Point|undefined;
     if(k==='arrowup'||k==='w')d={x:0,y:-1}; if(k==='arrowdown'||k==='s')d={x:0,y:1};
     if(k==='arrowleft'||k==='a')d={x:-1,y:0}; if(k==='arrowright'||k==='d')d={x:1,y:0};
@@ -52,15 +53,17 @@ export class DungeonScene extends Phaser.Scene{
     const target={x:this.player.x+d.x,y:this.player.y+d.y};
     const enemy=this.enemies.find(e=>e.hp>0&&same(e.pos,target));
     if(enemy){
-      const damage=Phaser.Math.Between(1,3);enemy.hp-=damage;this.message(`機械臂撞擊：造成 ${damage} 傷害。`);
-      if(enemy.hp<=0){this.scrap+=2;this.message('威脅解除。回收 +2 廢料。')}
+      const damage=Phaser.Math.Between(1,3)+this.atk;enemy.hp-=damage;this.message(`機械臂撞擊：造成 ${damage} 傷害。`);
+      if(enemy.hp<=0){this.scrap+=2;this.xp+=enemy.kind==='sentinel'?4:3;this.message('威脅解除。取得 EXP 與廢料。');if(this.xp>=this.xpNext){this.xp-=this.xpNext;this.level++;this.xpNext=Math.round(this.xpNext*1.45);this.atk++;this.maxHp+=2;this.hp=Math.min(this.maxHp,this.hp+3);this.visionRadius=Math.min(7,this.visionRadius+(this.level%2===0?1:0));this.message('LEVEL UP！機械臂、機體與感測能力獲得強化。')}}
     }else if(walkable(this.dungeon.tiles,target)){this.player=target;this.pickup();this.reveal()}
     else return;
     if(same(this.player,this.dungeon.exit)){
-      if(this.floor>=5){this.ended=true;this.message('發現封閉的深層維修閘門。M0.1 探勘完成。按 R 再次出發。');this.draw();return}
+      if(this.floor>=5){if(this.bankedModules+this.modules>=4){this.bankedModules=4;this.ended=true;this.message('ENGINEERING SET COMPLETE！深層維修防爆門已解鎖。ZONE II 即將開放。按 R 再次出發。')}else{this.message(`防爆門需要完整工程套件。目前安全保存 ${this.bankedModules}/4，本次攜帶 ${this.modules}。按 E 撤離保存。`)}this.draw();return}
       this.floor++;this.newFloor();return;
     }
-    this.enemyTurn();this.draw();
+    this.enemyTurn();
+    if(this.beaconTurns>0&&!this.ended){this.beaconTurns--;if(this.beaconTurns===0){this.bankedModules=Math.min(4,this.bankedModules+this.modules);this.ended=true;this.message(`撤離成功。工程套件永久進度 ${this.bankedModules}/4；本次回收 ${this.scrap} Scrap。按 R 再次出發。`)}}
+    this.draw();
   }
 
   private pickup(){
@@ -68,7 +71,7 @@ export class DungeonScene extends Phaser.Scene{
     this.loot=this.loot.filter(l=>l.id!==item.id);
     if(item.kind==='scrap'){this.scrap+=Phaser.Math.Between(2,5);this.message('回收舊世界零件。')}
     if(item.kind==='cell'){const gain=Math.min(5,this.maxHp-this.hp);this.hp+=gain;this.message(gain>0?`維修電池接入，機體 +${gain}。`:'維修電池已回收；目前機體完整。')}
-    if(item.kind==='module'){this.modules++;this.message(`★ 發現工程套件資料 ${this.modules}/4。`)}
+    if(item.kind==='module'){this.modules++;this.message(`★ 發現工程套件資料。本次攜帶 ${this.modules}，安全保存 ${this.bankedModules}/4。`)}
   }
 
   private enemyTurn(){
@@ -113,7 +116,7 @@ export class DungeonScene extends Phaser.Scene{
     for(const l of this.loot)if(this.visible(l.pos.x,l.pos.y))this.drawGlyph(l.pos,COLORS[l.kind],l.kind);
     for(const e of alive(this.enemies))if(this.visible(e.pos.x,e.pos.y))this.drawGlyph(e.pos,e.kind==='crawler'?COLORS.crawler:COLORS.sentinel,e.kind);
     this.drawGlyph(this.player,COLORS.robot,'robot');
-    this.hud.setText(`B${String(this.floor).padStart(2,'0')}   UNIT ${this.hp}/${this.maxHp}   SCRAP ${this.scrap}   ENGINEERING DATA ${this.modules}/4`);
+    this.hud.setText(`B${String(this.floor).padStart(2,'0')}  LV ${this.level}  XP ${this.xp}/${this.xpNext}  UNIT ${this.hp}/${this.maxHp}  ATK +${this.atk}  SCRAP ${this.scrap}`);this.log.setText(this.log.text+`\nENGINEERING ${this.bankedModules}/4 SAFE + ${this.modules} CARRY   [E] RETURN BEACON${this.beaconTurns?` ${this.beaconTurns}T`:''}`);
   }
 
   private nearFloor(x:number,y:number){for(let yy=y-1;yy<=y+1;yy++)for(let xx=x-1;xx<=x+1;xx++)if(this.dungeon.tiles[yy]?.[xx]===1)return true;return false}
