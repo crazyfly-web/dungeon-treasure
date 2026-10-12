@@ -45,10 +45,10 @@ export class DungeonScene extends Phaser.Scene{
     const k=e.key.toLowerCase();
     if(this.phase==='shelter'){if(k==='1')this.buyWorkshop();else if(k==='enter'||k==='r'){this.newFloor(true)}return}
     if(this.ended){if(k==='r'){this.phase='shelter';this.showShelter()}return}
-    if(k==='h'&&this.medkits>0){this.medkits--;this.hp=Math.min(this.maxHp,this.hp+7);this.advanceTurn();return}
+    if(k==='h'&&this.medkits>0){this.medkits--;this.hp=Math.min(this.maxHp,this.hp+7);this.message('使用維修包，恢復最多 7 HP。');this.advanceTurn();return}
     if(k==='q'&&this.emp>0){this.emp--;for(const enemy of alive(this.enemies))if(Math.abs(enemy.pos.x-this.player.x)+Math.abs(enemy.pos.y-this.player.y)<=3)enemy.hp-=4;this.message('EMP 脈衝釋放！近距離機械受到傷害。');this.advanceTurn();return}
-    if(k==='.'||k===' '){this.hp=Math.min(this.maxHp,this.hp+1);this.advanceTurn();return}
-    if(e.key.toLowerCase()==='e'){this.beaconTurns=4;this.message('RETURN BEACON 啟動：撐過 4 回合即可安全撤離。');this.draw();return}
+    if(k==='.'||k===' '){this.hp=Math.min(this.maxHp,this.hp+1);this.message('待機維修：+1 HP，消耗一回合能源。');this.advanceTurn();return}
+    if(k==='e'&&this.beaconTurns===0){this.beaconTurns=4;this.message('RETURN BEACON 啟動：撐過 4 回合即可安全撤離。');this.draw();return}
     let d:Point|undefined;
     if(k==='arrowup'||k==='w')d={x:0,y:-1}; if(k==='arrowdown'||k==='s')d={x:0,y:1};
     if(k==='arrowleft'||k==='a')d={x:-1,y:0}; if(k==='arrowright'||k==='d')d={x:1,y:0};
@@ -65,7 +65,7 @@ export class DungeonScene extends Phaser.Scene{
     else return;
     if(same(this.player,this.dungeon.exit)){
       if(this.floor>=10){if(this.bankedModules+this.modules>=4){this.bankedModules=4;this.extract('深層維修防爆門已解鎖！')}else{this.message(`防爆門需要完整工程套件。安全保存 ${this.bankedModules}/4，本次攜帶 ${this.modules}。按 E 撤離。`)}this.draw();return}
-      this.floor++;this.newFloor();return;
+      this.floor++;this.newFloor();this.advanceTurn();return;
     }
     this.advanceTurn();
   }
@@ -88,7 +88,7 @@ export class DungeonScene extends Phaser.Scene{
     for(const e of enemies){
       if(adjacent(e.pos,this.player)){
         const dmg=e.kind==='sentinel'?2:1;this.hp-=dmg;this.message(`${e.kind==='sentinel'?'警戒機':'爬行體'}攻擊，機體 -${dmg}。`);
-        if(this.hp<=0){this.hp=0;this.ended=true;this.message('SIGNAL LOST // 探索機失去連線。按 R 啟動備用機。');break}
+        if(this.hp<=0){this.hp=0;this.ended=true;this.message('SIGNAL LOST // 戰利品遺失，按 R 返回庇護所。');break}
       }else{
         const dist=Math.abs(e.pos.x-this.player.x)+Math.abs(e.pos.y-this.player.y);
         if(dist<8)e.pos=stepToward(e.pos,this.player,this.dungeon.tiles,enemies.filter(o=>o.id!==e.id).map(o=>o.pos).concat([this.player]));
@@ -96,7 +96,7 @@ export class DungeonScene extends Phaser.Scene{
     }
   }
 
-  private message(s:string){this.log.setText(s)}
+  private message(s:string){this.note=s;this.log.setText(s)}
   private key(x:number,y:number){return `${x},${y}`}
   private visible(x:number,y:number){
     const dx=x-this.player.x,dy=y-this.player.y;
@@ -125,7 +125,7 @@ export class DungeonScene extends Phaser.Scene{
     for(const l of this.loot)if(this.visible(l.pos.x,l.pos.y))this.drawGlyph(l.pos,COLORS[l.kind],l.kind);
     for(const e of alive(this.enemies))if(this.visible(e.pos.x,e.pos.y))this.drawGlyph(e.pos,e.kind==='crawler'?COLORS.crawler:COLORS.sentinel,e.kind);
     this.drawGlyph(this.player,COLORS.robot,'robot');
-    this.hud.setText(`B${String(this.floor).padStart(2,'0')} LV${this.level} XP${this.xp}/${this.xpNext} HP${this.hp}/${this.maxHp} EN${this.energy} T${this.turns} SCRAP${this.scrap}`);
+    this.hud.setText(`B${String(this.floor).padStart(2,'0')} LV${this.level} XP${this.xp}/${this.xpNext} HP${this.hp}/${this.maxHp} EN${this.energy} T${this.turns} SCRAP${this.scrap}`);this.log.setText(`${this.note}\n[H] 維修 ${this.medkits}  [Q] EMP ${this.emp}  [.] 待機  [E] 撤離 ${this.beaconTurns||''}  工程 ${this.bankedModules}/4 SAFE + ${this.modules} CARRY`);
   }
 
   private nearFloor(x:number,y:number){for(let yy=y-1;yy<=y+1;yy++)for(let xx=x-1;xx<=x+1;xx++)if(this.dungeon.tiles[yy]?.[xx]===1)return true;return false}
