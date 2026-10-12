@@ -11,7 +11,7 @@ export class DungeonScene extends Phaser.Scene{
   private dungeon!:Dungeon; private floor=1; private hp=12; private maxHp=12; private atk=1; private scrap=0; private modules=0; private level=1; private xp=0; private xpNext=6; private bankedModules=0;
   private player:Point={x:0,y:0}; private enemies:Enemy[]=[]; private loot:Loot[]=[]; private nextId=1;
   private gfx!:Phaser.GameObjects.Graphics; private hud!:Phaser.GameObjects.Text; private log!:Phaser.GameObjects.Text;
-  private ended=false; private busy=false; private explored=new Set<string>(); private visionRadius=4; private beaconTurns=0; private energy=100; private turns=0; private bankedScrap=0; private workshop=0; private medkits=1; private emp=1; private note=''; private phase:'field'|'shelter'='field';
+  private ended=false; private busy=false; private explored=new Set<string>(); private visionRadius=4; private beaconTurns=0; private energy=180; private turns=0; private floorTurns=0; private bankedScrap=0; private workshop=0; private medkits=1; private emp=1; private note=''; private phase:'field'|'shelter'='field';
 
   constructor(){super('dungeon')}
   create(){
@@ -25,16 +25,17 @@ export class DungeonScene extends Phaser.Scene{
   }
 
   private newFloor(reset=false){
-    if(reset){this.floor=1;this.level=1;this.xp=0;this.xpNext=6;this.atk=1;this.maxHp=12;this.hp=this.maxHp;this.scrap=0;this.modules=0;this.beaconTurns=0;this.ended=false;this.energy=100;this.turns=0;this.medkits=1+this.workshop;this.emp=1;this.visionRadius=4;this.phase='field'}
-    this.dungeon=generateDungeon();this.player={...this.dungeon.start};this.enemies=[];this.loot=[];this.explored=new Set<string>();
+    if(reset){this.floor=1;this.level=1;this.xp=0;this.xpNext=6;this.atk=1;this.maxHp=12;this.hp=this.maxHp;this.scrap=0;this.modules=0;this.beaconTurns=0;this.ended=false;this.energy=180;this.turns=0;this.floorTurns=0;this.medkits=1+this.workshop;this.emp=1;this.visionRadius=4;this.phase='field'}
+    this.floorTurns=0;this.dungeon=generateDungeon();this.player={...this.dungeon.start};this.enemies=[];this.loot=[];this.explored=new Set<string>();
     for(const room of this.dungeon.rooms.slice(1)){
       if(Math.random()<.8)this.enemies.push({id:this.nextId++,pos:{x:room.cx,y:room.cy},hp:this.floor>5?6:4,maxHp:this.floor>5?6:4,kind:Math.random()<Math.max(.25,.8-this.floor*.055)?'crawler':'sentinel'});
-      if(Math.random()<.75){
+      if(Math.random()<.95){
         const p=this.randomFloorIn(room.x,room.y,room.w,room.h);
-        this.loot.push({id:this.nextId++,pos:p,kind:Math.random()<.18?'module':Math.random()<.38?'cell':'scrap'});
+        this.loot.push({id:this.nextId++,pos:p,kind:Math.random()<.15?'module':Math.random()<.65?'cell':'scrap'});
       }
     }
     this.message(this.floor===1?'連線建立。ZONE I：廢棄地下鐵。回收物資，尋找工程套件資料。':`下降至 B${this.floor}。訊號強度下降。`);
+    if(this.floor>1){this.energy=Math.min(180,this.energy+35);this.message(`抵達 B${this.floor}，維修井補給能源 +35。`)}
     this.reveal();this.draw();
   }
 
@@ -48,7 +49,7 @@ export class DungeonScene extends Phaser.Scene{
     if(k==='h'&&this.medkits>0){this.medkits--;this.hp=Math.min(this.maxHp,this.hp+7);this.message('使用維修包，恢復最多 7 HP。');this.advanceTurn();return}
     if(k==='q'&&this.emp>0){this.emp--;for(const enemy of alive(this.enemies))if(Math.abs(enemy.pos.x-this.player.x)+Math.abs(enemy.pos.y-this.player.y)<=3)enemy.hp-=4;this.message('EMP 脈衝釋放！近距離機械受到傷害。');this.advanceTurn();return}
     if(k==='.'||k===' '){this.hp=Math.min(this.maxHp,this.hp+1);this.message('待機維修：+1 HP，消耗一回合能源。');this.advanceTurn();return}
-    if(k==='e'&&this.beaconTurns===0){this.beaconTurns=4;this.message('RETURN BEACON 啟動：撐過 4 回合即可安全撤離。');this.draw();return}
+    if(k==='e'&&this.beaconTurns===0){this.beaconTurns=4;this.message('RETURN BEACON 啟動：撐過 4 回合即可安全撤離；可用 . 待機。');this.draw();return}
     let d:Point|undefined;
     if(k==='arrowup'||k==='w')d={x:0,y:-1}; if(k==='arrowdown'||k==='s')d={x:0,y:1};
     if(k==='arrowleft'||k==='a')d={x:-1,y:0}; if(k==='arrowright'||k==='d')d={x:1,y:0};
@@ -74,7 +75,7 @@ export class DungeonScene extends Phaser.Scene{
     const item=this.loot.find(l=>same(l.pos,this.player));if(!item)return;
     this.loot=this.loot.filter(l=>l.id!==item.id);
     if(item.kind==='scrap'){this.scrap+=Phaser.Math.Between(2,5);this.message('回收舊世界零件。')}
-    if(item.kind==='cell'){const gain=Math.min(5,this.maxHp-this.hp);this.hp+=gain;this.message(gain>0?`維修電池接入，機體 +${gain}。`:'維修電池已回收；目前機體完整。')}
+    if(item.kind==='cell'){const gain=Math.min(5,this.maxHp-this.hp);const charge=Math.min(65,180-this.energy);this.hp+=gain;this.energy+=charge;this.message(`維修能源電池：機體 +${gain}，能源 +${charge}。`)}
     if(item.kind==='module'){this.modules++;this.message(`★ 發現工程套件資料。本次攜帶 ${this.modules}，安全保存 ${this.bankedModules}/4。`)}
   }
 
@@ -82,7 +83,7 @@ export class DungeonScene extends Phaser.Scene{
   private extract(reason='撤離成功'){this.bankedScrap+=this.scrap;this.bankedModules=Math.min(4,this.bankedModules+this.modules);this.persist();this.ended=true;this.message(`${reason} 已存入 ${this.scrap} Scrap，工程套件 ${this.bankedModules}/4。按 R 返回庇護所。`);this.draw()}
   private showShelter(){this.gfx.clear();this.hud.setText('SHELTER // 庇護所整備');this.message(`庫存 ${this.bankedScrap} Scrap｜工程套件 ${this.bankedModules}/4｜維修支援 Lv.${this.workshop}\n[1] 維修工坊升級（${30+this.workshop*30} Scrap，出擊多帶 1 維修包）\n[ENTER] 出擊｜[H] 維修包 [Q] EMP [.] 待機 [E] 撤離`)}
   private buyWorkshop(){const cost=30+this.workshop*30;if(this.workshop>=3){this.message('工坊已達最高等級。');return}if(this.bankedScrap<cost){this.message(`Scrap 不足，需要 ${cost}。`);return}this.bankedScrap-=cost;this.workshop++;this.persist();this.showShelter()}
-  private advanceTurn(){this.turns++;this.energy=Math.max(0,this.energy-1);if(this.energy===0)this.hp-=2;if(this.turns>150)this.hp-=1;this.enemyTurn();if(this.hp<=0){this.hp=0;this.ended=true;this.message('SIGNAL LOST｜本次戰利品遺失。按 R 返回庇護所。')}if(this.beaconTurns>0&&!this.ended){this.beaconTurns--;if(this.beaconTurns===0){this.extract();return}}this.draw()}
+  private advanceTurn(){this.turns++;this.floorTurns++;this.energy=Math.max(0,this.energy-1);if(this.energy===0)this.hp-=1;if(this.floorTurns>220&&this.floorTurns%3===0)this.hp-=1;if(this.hp>0)this.enemyTurn();if(this.hp<=0){this.hp=0;this.ended=true;this.message('SIGNAL LOST｜本次戰利品遺失。按 R 返回庇護所。')}if(this.beaconTurns>0&&!this.ended){this.beaconTurns--;if(this.beaconTurns===0){this.extract();return}}this.draw()}
   private enemyTurn(){
     const enemies=alive(this.enemies);
     for(const e of enemies){
